@@ -655,7 +655,8 @@ $("#undo").onclick = undo;
 $("#redo").onclick = redo;
 $("#anyFilter").oninput = () => renderAny();
 
-init();
+// some hosts (e.g. htmlpreview.github.io) load the d3 script asynchronously
+(function start() { window.d3 ? init() : setTimeout(start, 30); })();
 </script>
 </body>
 </html>
