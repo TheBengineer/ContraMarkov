@@ -2,7 +2,7 @@
 
 A Markov chain of contra dance moves, built from move trigrams across a set of dances, and a single-page viewer for browsing it as a force-directed graph.
 
-**[Open the live viewer](https://htmlpreview.github.io/?https://github.com/TheBengineer/ContraMarkov/blob/master/contra_markov.html)**, or download [`contra_markov.html`](contra_markov.html) and open it in a browser. The chain data is embedded in the page, so it works offline.
+**[Open the live viewer](https://thebengineer.github.io/ContraMarkov/contra_markov.html)**, or download [`contra_markov.html`](contra_markov.html) and open it in a browser. The chain data is embedded in the page, so it works offline.
 
 ## What's in the chain
 
