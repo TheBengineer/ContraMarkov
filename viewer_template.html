@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contra Move Chain</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+:root {
+  --bg: #f7f6f3; --panel: #ffffff; --ink: #1f2328; --muted: #6b7078; --line: #e3e1dc;
+  --edge: #b9b6ae; --accent: #c2410c; --accent-soft: #fde7da; --path: #2563eb; --bar: #f0c9b3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171a; --panel: #1d2024; --ink: #e8e6e1; --muted: #9aa0a8; --line: #30343a;
+    --edge: #4a4f57; --accent: #fb923c; --accent-soft: #3a2618; --path: #60a5fa; --bar: #6b3a1f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a; --panel: #1d2024; --ink: #e8e6e1; --muted: #9aa0a8; --line: #30343a;
+  --edge: #4a4f57; --accent: #fb923c; --accent-soft: #3a2618; --path: #60a5fa; --bar: #6b3a1f;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; }
+header label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+select, input[type=search], button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; padding: 4px 10px; }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+main { flex: 1; display: flex; min-height: 0; }
+#graph { flex: 1; position: relative; min-width: 0; }
+#graph svg { width: 100%; height: 100%; display: block; cursor: grab; }
+#legend { position: absolute; left: 12px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px; max-width: 70%; font-size: 12px; color: var(--muted); pointer-events: none; }
+#legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 4px; vertical-align: -1px; }
+#hint { position: absolute; right: 12px; top: 10px; font-size: 12px; color: var(--muted); }
+aside { width: 380px; max-width: 45vw; border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 14px 16px 24px; }
+aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+aside h2:first-child { margin-top: 0; }
+#path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 13px; cursor: pointer; }
+.chip.cur { border-color: var(--path); color: var(--path); font-weight: 600; }
+.chip .x { border: 0; background: none; padding: 0 4px; color: var(--muted); }
+.chip .b { border: 0; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 6px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chip .b.multi { cursor: pointer; text-decoration: underline dotted; }
+.chip .b.over { background: var(--accent); color: #fff; }
+#beatbar { margin: 12px 0 4px; }
+#beatbar .track { position: relative; height: 18px; border-radius: 4px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
+#beatbar .seg { position: absolute; top: 0; bottom: 0; border-right: 1px solid var(--panel); opacity: .85; }
+#beatbar .phr { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--muted); opacity: .5; }
+#beatbar .phr span { position: absolute; top: 1px; left: 3px; font-size: 10px; color: var(--ink); }
+#beatbar .tot { font-size: 12px; color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; }
+#beatbar .tot b { color: var(--ink); }
+.beats { margin-top: 6px; font-size: 13px; }
+.beats .opt { display: inline-block; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin: 2px 2px 0 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.beats .opt.typ { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.src { font-size: 11px; color: var(--muted); }
+#path { flex-direction: column; align-items: stretch; gap: 4px; }
+.phrase { display: grid; grid-template-columns: 30px 1fr; gap: 6px; align-items: start; padding: 4px 0; border-top: 1px dashed var(--line); }
+.phrase:first-child { border-top: 0; }
+.plabel { font-weight: 700; font-size: 12px; color: var(--path); padding-top: 4px; }
+.pmoves { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip .pb { font-size: 10px; color: var(--muted); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.fit { font-size: 11px; color: var(--path); white-space: nowrap; }
+.arrow { color: var(--muted); font-size: 12px; }
+.empty { color: var(--muted); font-style: italic; }
+#current .name { font-size: 20px; font-weight: 650; margin: 2px 0; }
+#current .stats { color: var(--muted); font-size: 13px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; position: relative; }
+.row:hover { background: var(--accent-soft); }
+.row .bar { grid-column: 1 / -1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.row .bar i { display: block; height: 100%; background: var(--accent); }
+.row .num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.row details { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.row summary { cursor: pointer; width: max-content; }
+.row details p { margin: 4px 0 0; }
+.small { font-size: 12px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.node circle { stroke: var(--panel); stroke-width: 1.5px; cursor: pointer; }
+.node text { font-size: 11px; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; pointer-events: none; }
+.node.faded { opacity: .18; }
+.node.cur circle { stroke: var(--path); stroke-width: 3.5px; }
+.node.onpath circle { stroke: var(--path); stroke-width: 2px; }
+.node.pinned circle { stroke: var(--ink); stroke-width: 2px; stroke-dasharray: 3 2; }
+.link { fill: none; stroke: var(--edge); stroke-opacity: .55; }
+.link.faded { stroke-opacity: .06; }
+.link.out { stroke: var(--accent); stroke-opacity: .9; }
+.link.in { stroke: var(--muted); stroke-opacity: .6; stroke-dasharray: 3 3; }
+.link.onpath { stroke: var(--path); stroke-opacity: .95; }
+.link.hover { stroke: var(--accent); stroke-opacity: 1; stroke-dasharray: none; stroke-width: 7px; }
+.node.hover circle { stroke: var(--accent); stroke-width: 4px; }
+.node.hover text { font-weight: 700; font-size: 13px; }
+@media (max-width: 760px) {
+  main { flex-direction: column; }
+  #graph { min-height: 55vh; }
+  aside { width: auto; max-width: none; border-left: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Contra move chain</h1>
+  <label>Level <select id="level"></select></label>
+  <label>Weight
+    <span class="seg" id="weight">
+      <button data-w="count" class="on" title="Raw instances">Count</button>
+      <button data-w="pop" title="Popularity-weighted">Popularity</button>
+    </span>
+  </label>
+  <label>Min edge <input id="minEdge" type="range" min="1" max="6" value="1"><span id="minEdgeVal">1</span></label>
+  <label><input id="search" type="search" placeholder="Find a move…" list="moves"></label>
+  <datalist id="moves"></datalist>
+  <span style="flex:1"></span>
+  <button id="step" title="Sample one next move">Step</button>
+  <button id="walk" class="primary" title="Generate a random sequence">Random walk</button>
+  <button id="reset">Reset</button>
+</header>
+<main>
+  <div id="graph"><svg></svg><div id="legend"></div><div id="hint">Click a move to start · click a successor to walk · drag a node to pin it, click to unpin</div></div>
+  <aside>
+    <h2>Path <button id="back" class="small" title="Remove last move">↶ Back</button></h2>
+    <div id="path"></div>
+    <div id="beatbar"></div>
+    <div id="current"></div>
+    <h2><span id="nextTitle">Next move</span><span class="seg" id="order">
+      <button data-o="2" class="on" title="Condition on the last two moves">2nd order</button>
+      <button data-o="1" title="Condition on the last move only">1st order</button>
+    </span></h2>
+    <div id="next"></div>
+    <h2>Comes after</h2>
+    <div id="prev"></div>
+  </aside>
+</main>
+<script>
+const EMBEDDED = /*__CHAIN_DATA__*/null;
+
+const state = { level: null, weight: "count", order: 2, minEdge: 1, path: [], beatOverride: {} };
+const DANCE_BEATS = 64, PHRASES = ["A1", "A2", "B1", "B2"];
+let DATA, L, incoming, color, sim, zoomG, nodeSel, linkSel, nodeById;
+let walking = null;
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const pretty = m => m.split("|").filter(Boolean).join(" · ");
+const family = m => m.split("|")[0].split(" ")[0].toLowerCase();
+const pKey = () => state.weight === "pop" ? "p_pop" : "p";
+const wKey = () => state.weight;
+
+async function init() {
+  DATA = EMBEDDED || await fetch("contra_markov.json").then(r => r.json());
+  const lvSel = $("#level");
+  for (const lv of DATA.meta.level_order) lvSel.add(new Option(lv, lv));
+  readHash();
+  if (!DATA.levels[state.level]) state.level = DATA.meta.level_order[0];
+  lvSel.value = state.level;
+
+  lvSel.onchange = () => { stopWalk(); state.level = lvSel.value; state.path = []; loadLevel(); };
+  $("#weight").onclick = e => { const w = e.target.dataset.w; if (!w) return; state.weight = w; segOn("#weight", "w", w); restyle(); render(); };
+  $("#order").onclick = e => { const o = e.target.dataset.o; if (!o) return; state.order = +o; segOn("#order", "o", o); render(); };
+  $("#minEdge").oninput = e => { state.minEdge = +e.target.value; $("#minEdgeVal").textContent = state.minEdge; buildGraph(); };
+  $("#search").onchange = e => { const id = L.nodes.find(n => n.id === e.target.value || pretty(n.id) === e.target.value)?.id; if (id) { stopWalk(); state.path = [id]; render(); focusNode(id); } e.target.value = ""; };
+  $("#back").onclick = () => { stopWalk(); state.path.pop(); render(); };
+  $("#reset").onclick = () => { stopWalk(); state.path = []; render(); zoomG && d3.select("#graph svg").transition().call(zoomG.transform, d3.zoomIdentity); };
+  $("#step").onclick = () => { stopWalk(); step(); };
+  $("#walk").onclick = () => walking ? stopWalk() : startWalk();
+  window.addEventListener("hashchange", () => { const lv = state.level; readHash(); if (state.level !== lv) { $("#level").value = state.level; loadLevel(); } else render(); });
+  loadLevel();
+}
+
+function segOn(sel, key, val) { document.querySelectorAll(sel + " button").forEach(b => b.classList.toggle("on", b.dataset[key] === String(val))); }
+
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("level")) state.level = h.get("level");
+  state.path = h.get("path") ? h.get("path").split("~").filter(Boolean) : [];
+}
+function writeHash() {
+  const h = new URLSearchParams({ level: state.level });
+  if (state.path.length) h.set("path", state.path.join("~"));
+  history.replaceState(null, "", "#" + h.toString());
+}
+
+function loadLevel() {
+  L = DATA.levels[state.level];
+  nodeById = new Map(L.nodes.map(n => [n.id, n]));
+  state.path = state.path.filter(m => nodeById.has(m));
+  incoming = {};
+  for (const [a, outs] of Object.entries(L.first_order))
+    for (const e of outs) (incoming[e.to] ||= []).push({ ...e, to: a });
+  for (const k in incoming) incoming[k].sort((x, y) => y.count - x.count);
+
+  const fams = [...d3.rollup(L.nodes, v => d3.sum(v, n => n.count), n => family(n.id))].sort((a, b) => b[1] - a[1]).map(d => d[0]);
+  const palette = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f59f00", "#0c8599", "#e03131", "#5c7cfa", "#66a80f", "#d6336c", "#868e96", "#9c6644"];
+  color = d3.scaleOrdinal(fams, fams.map((_, i) => i < palette.length ? palette[i] : "#999"));
+  $("#legend").innerHTML = fams.slice(0, 12).map(f => `<span style="--c:${color(f)}">${esc(f)}</span>`).join("");
+  $("#moves").innerHTML = L.nodes.map(n => `<option value="${esc(n.id)}">${esc(pretty(n.id))}</option>`).join("");
+
+  const maxEdge = d3.max(Object.values(L.first_order).flat(), e => e.count) || 1;
+  const me = $("#minEdge"); me.max = Math.max(1, Math.min(maxEdge, 10));
+  state.minEdge = Math.min(state.minEdge, +me.max); me.value = state.minEdge; $("#minEdgeVal").textContent = state.minEdge;
+  buildGraph();
+}
+
+function buildGraph() {
+  const svg = d3.select("#graph svg");
+  svg.selectAll("*").remove();
+  const { width, height } = svg.node().getBoundingClientRect();
+
+  svg.append("defs").selectAll("marker").data(["edge", "out", "path"]).join("marker")
+    .attr("id", d => "arr-" + d).attr("viewBox", "0 -4 8 8").attr("refX", 7).attr("refY", 0)
+    .attr("markerWidth", 6).attr("markerHeight", 6).attr("markerUnits", "userSpaceOnUse").attr("orient", "auto")
+    .append("path").attr("d", "M0,-4L8,0L0,4").attr("fill", d => `var(--${d === "out" ? "accent" : d})`);
+
+  const links = [];
+  for (const [a, outs] of Object.entries(L.first_order))
+    for (const e of outs) if (e.count >= state.minEdge) links.push({ source: a, target: e.to, e });
+  const keep = new Set(state.path);
+  links.forEach(l => { keep.add(l.source); keep.add(l.target); });
+  const nodes = L.nodes.filter(n => keep.has(n.id)).map(n => ({ ...n }));
+  const pairSet = new Set(links.map(l => l.source + "\u0000" + l.target));
+  links.forEach(l => l.bidir = pairSet.has(l.target + "\u0000" + l.source));
+
+  const r = d3.scaleSqrt().domain([0, d3.max(nodes, n => n.count) || 1]).range([4, 22]);
+  nodes.forEach(n => n.r = r(n.count));
+  const labelCut = nodes.map(n => n.count).sort((a, b) => b - a)[Math.min(nodes.length - 1, 24)] ?? 0;
+
+  const g = svg.append("g");
+  zoomG = d3.zoom().scaleExtent([0.2, 5]).on("zoom", ev => g.attr("transform", ev.transform));
+  svg.call(zoomG).on("dblclick.zoom", null);
+  svg.on("click", ev => { if (ev.target === svg.node()) { stopWalk(); state.path = []; render(); } });
+
+  linkSel = g.append("g").selectAll("path").data(links).join("path").attr("class", "link");
+  linkSel.append("title").text(l => `${pretty(l.source.id ?? l.source)} → ${pretty(l.target.id ?? l.target)}\n${l.e.count} instances · pop ${l.e.pop}`);
+
+  nodeSel = g.append("g").selectAll("g").data(nodes, d => d.id).join("g").attr("class", "node")
+    .call(d3.drag()
+      .on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.2).restart(); d.moved = false; d.fx = d.x; d.fy = d.y; })
+      .on("drag", (ev, d) => { d.moved = true; d.fx = ev.x; d.fy = ev.y; })
+      .on("end", function (ev, d) {
+        if (!ev.active) sim.alphaTarget(0);
+        // letting go after a drag pins the node; a plain click on a pinned node unpins it
+        d.pinned = d.moved;
+        if (!d.pinned) d.fx = d.fy = null;
+        d3.select(this).classed("pinned", d.pinned);
+      }))
+    .on("click", (ev, d) => { ev.stopPropagation(); stopWalk(); clickNode(d.id); });
+  nodeSel.append("circle").attr("r", d => d.r).attr("fill", d => color(family(d.id)));
+  nodeSel.append("text").attr("dx", d => d.r + 3).attr("dy", "0.35em").attr("class", "lbl")
+    .text(d => pretty(d.id)).attr("data-big", d => d.count >= labelCut ? 1 : null);
+  nodeSel.append("title").text(d => `${pretty(d.id)}\n${beatLabel(d.id)} (${d.beats.source})\n${d.count} instances · ${d.n_dances} dances`);
+
+  sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(l => 50 + l.source.r + l.target.r).strength(l => 0.15 + 0.5 * Math.min(1, l.e.count / 6)))
+    .force("charge", d3.forceManyBody().strength(-260))
+    .force("x", d3.forceX(width / 2).strength(0.04))
+    .force("y", d3.forceY(height / 2).strength(0.06))
+    .force("collide", d3.forceCollide(d => d.r + 6))
+    .on("tick", tick);
+
+  restyle();
+  render();
+}
+
+function edgePath(l) {
+  const s = l.source, t = l.target;
+  if (s === t) {
+    const x = s.x, y = s.y - s.r;
+    return `M${x - 4},${y} C${x - 26},${y - 34} ${x + 26},${y - 34} ${x + 4},${y}`;
+  }
+  const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy) || 1;
+  const bend = l.bidir ? 0.18 : 0.06;
+  const mx = (s.x + t.x) / 2 - dy * bend, my = (s.y + t.y) / 2 + dx * bend;
+  // pull the end back to the target's rim so the arrowhead is visible
+  const ex = t.x - mx, ey = t.y - my, ed = Math.hypot(ex, ey) || 1;
+  const tx = t.x - ex / ed * (t.r + 2), ty = t.y - ey / ed * (t.r + 2);
+  return `M${s.x},${s.y} Q${mx},${my} ${tx},${ty}`;
+}
+
+function tick() {
+  linkSel.attr("d", edgePath);
+  nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+}
+
+function restyle() {
+  if (!linkSel) return;
+  const w = wKey();
+  const max = d3.max(linkSel.data(), l => l.e[w]) || 1;
+  const width = d3.scaleSqrt().domain([0, max]).range([0.6, 6]);
+  linkSel.attr("stroke-width", l => width(l.e[w]));
+}
+
+function clickNode(id) {
+  const cur = state.path.at(-1);
+  const isNext = cur && (L.first_order[cur] || []).some(e => e.to === id);
+  state.path = isNext ? [...state.path, id] : [id];
+  render();
+}
+
+function nextDist() {
+  const p = state.path;
+  if (!p.length) return { dist: [], given: null };
+  if (state.order === 2 && p.length >= 2) {
+    const d = L.second_order[`${p.at(-2)} >> ${p.at(-1)}`];
+    if (d) return { dist: d, given: [p.at(-2), p.at(-1)] };
+  }
+  return { dist: L.first_order[p.at(-1)] || [], given: [p.at(-1)], fellBack: state.order === 2 && p.length >= 2 };
+}
+
+function render() {
+  writeHash();
+  const p = state.path, cur = p.at(-1);
+  const pk = pKey();
+
+  const starts = beatStarts();
+  const groups = d3.groups(p.map((m, i) => ({ m, i, start: starts[i] })), d => Math.floor(d.start / 16));
+  $("#path").innerHTML = p.length
+    ? groups.map(([ph, items]) => `<div class="phrase"><div class="plabel">${phraseName(ph)}</div><div class="pmoves">${items.map(({ m, i, start }) => {
+        const opts = beatChoices(i), over = beatKey(i) in state.beatOverride;
+        return `<span class="chip ${i === p.length - 1 ? "cur" : ""}" data-i="${i}" title="Go back to here"><span class="pb">${start % 16 + 1}</span>${esc(pretty(m))}<button class="b ${opts.length > 1 ? "multi" : ""} ${over ? "over" : ""}" data-b="${i}" title="${opts.length > 1 ? "Click to cycle: " + opts.join(" / ") + " beats" : "beats"}">${beatsAt(i)}b</button><button class="x" data-x="${i}" title="Remove from here">×</button></span>`;
+      }).join("")}</div></div>`).join("")
+    : '<span class="empty">Click a move in the graph, search, or hit Random walk.</span>';
+  $("#path").querySelectorAll(".chip").forEach(c => c.onclick = e => {
+    stopWalk();
+    const b = e.target.dataset.b;
+    if (b !== undefined) { cycleBeats(+b); return render(); }
+    const x = e.target.dataset.x;
+    state.path = x !== undefined ? p.slice(0, +x) : p.slice(0, +c.dataset.i + 1);
+    render();
+  });
+  $("#back").disabled = !p.length;
+  renderBeatBar();
+
+  if (cur) {
+    const n = nodeById.get(cur);
+    $("#current").innerHTML = `<h2>Current move</h2><div class="name"><span class="dot" style="background:${color(family(cur))}"></span>${esc(pretty(cur))}</div>
+      <div class="stats">${n.count} instances · ${n.n_dances} dances · ${(L.first_order[cur] || []).length} distinct successors</div>
+      ${beatsInfo(n.beats)}${phraseInfo(n.phrase_starts)}`;
+  } else $("#current").innerHTML = "";
+
+  const { dist, given, fellBack } = nextDist();
+  $("#nextTitle").innerHTML = given
+    ? `Next move <span class="small">given ${given.map(g => esc(pretty(g))).join(" → ")}${fellBack ? " (no 2nd-order data, using 1st)" : ""}</span>`
+    : "Next move";
+  $("#next").innerHTML = cur ? rows(dist, pk, totalBeats() % 16 + 1) || '<span class="empty">No recorded successor (end of data).</span>' : '<span class="empty">—</span>';
+  $("#next").querySelectorAll(".row").forEach(r => r.onclick = e => { if (e.target.closest("details")) return; stopWalk(); state.path = [...p, r.dataset.m]; render(); });
+
+  const inc = cur ? incoming[cur] || [] : [];
+  const totIn = d3.sum(inc, e => e[wKey()]) || 1;
+  $("#prev").innerHTML = cur ? rows(inc.map(e => ({ ...e, _p: e[wKey()] / totIn })), "_p") || '<span class="empty">Nothing recorded before this.</span>' : '<span class="empty">—</span>';
+  $("#prev").querySelectorAll(".row").forEach(r => r.onclick = e => { if (e.target.closest("details")) return; stopWalk(); state.path = [r.dataset.m]; render(); focusNode(r.dataset.m); });
+  $("#next").querySelectorAll(".row").forEach(r => { r.onmouseenter = () => hoverEdge(cur, r.dataset.m, r.dataset.m); r.onmouseleave = () => hoverEdge(); });
+  $("#prev").querySelectorAll(".row").forEach(r => { r.onmouseenter = () => hoverEdge(r.dataset.m, cur, r.dataset.m); r.onmouseleave = () => hoverEdge(); });
+
+  highlight(dist);
+}
+
+// ---- beats ----
+const beatKey = i => `${i}:${state.path[i]}`;
+function edgeBeats(i) {
+  const p = state.path;
+  return i + 1 < p.length ? (L.first_order[p[i]] || []).find(e => e.to === p[i + 1])?.from_beats : null;
+}
+function beatChoices(i) {
+  const nb = nodeById.get(state.path[i])?.beats, eb = edgeBeats(i);
+  return [...new Set([...(nb?.options || []), ...(eb?.options || [])].map(o => o.beats))].sort((a, b) => a - b);
+}
+const beatRange = i => { const o = beatChoices(i); return o.length ? [o[0], o.at(-1)] : [8, 8]; };
+
+// Lay out the whole path's beats. Fixed moves keep their length. An adjustable move
+// (seen at more than one length) shrinks if that lets a fixed-length next move end on
+// the phrase end; otherwise it stretches to the end of its phrase (or the next one if
+// it can't fit in what's left). Clicked overrides always win.
+let beatCache = null;
+function scheduleBeats() {
+  const p = state.path, key = state.level + "|" + p.join("~") + "|" + JSON.stringify(state.beatOverride);
+  if (beatCache?.key === key) return beatCache.beats;
+  const fixedAt = j => {
+    if (j >= p.length) return null;
+    if (beatKey(j) in state.beatOverride) return state.beatOverride[beatKey(j)];
+    const [lo, hi] = beatRange(j);
+    return lo === hi ? lo : null;
+  };
+  const beats = [];
+  let s = 0;
+  for (let i = 0; i < p.length; i++) {
+    let b = fixedAt(i);
+    if (b === null) {
+      const [lo, hi] = beatRange(i);
+      const room = 16 - s % 16, next = fixedAt(i + 1);
+      const shrink = next !== null ? room - next : -1;
+      if (shrink >= lo && shrink <= hi) b = shrink;
+      else if (room >= lo) b = Math.min(room, hi);
+      else if (room + 16 <= hi) b = room + 16;
+      else b = (edgeBeats(i) || nodeById.get(p[i])?.beats)?.typical ?? lo;
+    }
+    beats.push(b);
+    s += b;
+  }
+  beatCache = { key, beats };
+  return beats;
+}
+const beatsAt = i => scheduleBeats()[i];
+function cycleBeats(i) {
+  const opts = beatChoices(i);
+  if (opts.length < 2) return;
+  state.beatOverride[beatKey(i)] = opts[(opts.indexOf(beatsAt(i)) + 1) % opts.length];
+}
+const totalBeats = () => d3.sum(state.path, (_, i) => beatsAt(i));
+function beatStarts() { let t = 0; return state.path.map((_, i) => { const s = t; t += beatsAt(i); return s; }); }
+const phraseName = ph => PHRASES[ph % 4] + (ph >= 4 ? ` (x${Math.floor(ph / 4) + 1})` : "");
+function beatLabel(m) {
+  const b = nodeById.get(m)?.beats;
+  if (!b) return "";
+  const opts = b.options.map(o => o.beats);
+  return opts.length > 1 ? `${b.typical}b (${d3.min(opts)}–${d3.max(opts)})` : `${b.typical}b`;
+}
+function beatsInfo(b) {
+  if (!b) return "";
+  const src = { observed: "measured from the dances", inferred: "inferred from neighbouring moves", default: "convention, no data" }[b.source];
+  const parts = b.parts.length > 1 ? ` · ${b.parts.map(p => `${esc(p.name)} ${p.beats}`).join(" + ")}` : "";
+  return `<div class="beats"><b>${b.typical} beats</b>${parts}<br>
+    ${b.options.map(o => `<span class="opt ${o.beats === b.typical ? "typ" : ""}">${o.beats}${o.n ? ` ×${o.n}` : ""}</span>`).join("")}
+    <span class="src">${src}</span></div>`;
+}
+function phraseInfo(starts) {
+  if (!starts?.length) return "";
+  const max = d3.max(starts, s => s.n);
+  return `<div class="beats">Usually starts on phrase beat<br>${starts.map(s => `<span class="opt ${s.n === max ? "typ" : ""}">beat ${s.beat} ×${s.n}</span>`).join("")}</div>`;
+}
+
+function renderBeatBar() {
+  const p = state.path;
+  if (!p.length) { $("#beatbar").innerHTML = ""; return; }
+  const total = totalBeats(), span = Math.max(DANCE_BEATS, total);
+  let t = 0;
+  const segs = p.map((m, i) => {
+    const b = beatsAt(i), start = t; t += b;
+    const ph = PHRASES[Math.floor(start / 16) % 4] + " beat " + (start % 16 + 1);
+    return `<div class="seg" style="left:${start / span * 100}%;width:${b / span * 100}%;background:${color(family(m))}" title="${esc(pretty(m))}\n${b} beats · starts ${ph}"></div>`;
+  }).join("");
+  const phr = d3.range(0, span, 16).map(x => `<div class="phr" style="left:${x / span * 100}%"><span>${PHRASES[x / 16 % 4]}</span></div>`).join("");
+  const next = total < DANCE_BEATS ? `next move starts ${PHRASES[Math.floor(total / 16)]} beat ${total % 16 + 1}` : total === DANCE_BEATS ? "fills the dance exactly" : `${total - DANCE_BEATS} beats over`;
+  $("#beatbar").innerHTML = `<div class="track">${segs}${phr}</div><div class="tot"><span><b>${total}</b> / ${DANCE_BEATS} beats</span><span>${next}</span></div>`;
+}
+
+// fitBeat: the phrase beat (1-16) the next move would start on; marks moves that usually start there
+function rows(dist, pk, fitBeat) {
+  const sorted = [...dist].sort((a, b) => b[pk] - a[pk] || b.count - a.count);
+  return sorted.map(e => {
+    const fits = fitBeat && (nodeById.get(e.to)?.phrase_starts || []).some(s => s.beat === fitBeat);
+    return `<div class="row" data-m="${esc(e.to)}">
+    <span><span class="dot" style="background:${color(family(e.to))}"></span>${esc(pretty(e.to))}${fits ? ` <span class="fit" title="Usually starts on beat ${fitBeat} of a phrase, where it would land">♪ on phrase</span>` : ""}</span>
+    <span class="num">${beatLabel(e.to)} · ${(e[pk] * 100).toFixed(0)}% · ${e.count}× · pop ${e.pop}</span>
+    <span class="bar"><i style="width:${(e[pk] * 100).toFixed(1)}%"></i></span>
+    <details><summary>${e.dances.length} dance${e.dances.length === 1 ? "" : "s"}</summary><p>${e.dances.map(esc).join(" · ")}</p></details>
+  </div>`;
+  }).join("");
+}
+
+function highlight(dist) {
+  if (!nodeSel) return;
+  const p = state.path, cur = p.at(-1);
+  const nextSet = new Set(dist.map(e => e.to));
+  const prevSet = new Set((cur && incoming[cur] || []).map(e => e.to));
+  const pathSet = new Set(p);
+  const pathEdges = new Set(p.slice(1).map((m, i) => p[i] + "\u0000" + m));
+  const id = x => x.id ?? x;
+
+  nodeSel.classed("cur", d => d.id === cur)
+    .classed("onpath", d => pathSet.has(d.id) && d.id !== cur)
+    .classed("faded", d => cur && !(d.id === cur || nextSet.has(d.id) || prevSet.has(d.id) || pathSet.has(d.id)));
+  nodeSel.select("text").style("display", function (d) {
+    if (!cur) return this.dataset.big ? null : "none";
+    return d.id === cur || nextSet.has(d.id) || pathSet.has(d.id) || prevSet.has(d.id) ? null : "none";
+  });
+  linkSel.each(function (l) {
+    const s = id(l.source), t = id(l.target);
+    const onpath = pathEdges.has(s + "\u0000" + t);
+    const out = cur && s === cur && nextSet.has(t);
+    const inn = cur && t === cur;
+    d3.select(this).classed("onpath", onpath).classed("out", !onpath && out).classed("in", !onpath && !out && inn)
+      .classed("faded", cur && !onpath && !out && !inn)
+      .attr("marker-end", `url(#arr-${onpath ? "path" : out ? "out" : "edge"})`);
+  });
+  linkSel.filter(".out, .onpath").raise();
+}
+
+// highlight the edge from -> to and the node `node` while a panel row is hovered; no args clears
+function hoverEdge(from, to, node) {
+  if (!nodeSel) return;
+  const id = x => x.id ?? x;
+  nodeSel.classed("hover", d => d.id === node);
+  nodeSel.filter(".hover").raise().select("text").style("display", null);
+  linkSel.classed("hover", l => id(l.source) === from && id(l.target) === to);
+  linkSel.filter(".hover").raise();
+  if (!from) highlight(nextDist().dist);
+}
+
+function focusNode(id) {
+  const n = nodeSel?.data().find(d => d.id === id);
+  if (!n) return;
+  const svg = d3.select("#graph svg"), { width, height } = svg.node().getBoundingClientRect();
+  const k = Math.max(d3.zoomTransform(svg.node()).k, 1);
+  svg.transition().duration(500).call(zoomG.transform, d3.zoomIdentity.translate(width / 2 - n.x * k, height / 2 - n.y * k).scale(k));
+}
+
+function sample(dist) {
+  const pk = pKey(), total = d3.sum(dist, e => e[pk]);
+  let x = Math.random() * total;
+  for (const e of dist) if ((x -= e[pk]) <= 0) return e.to;
+  return dist.at(-1)?.to;
+}
+
+function step(silent) {
+  if (!state.path.length) {
+    const starts = L.nodes.filter(n => n.count).map(n => ({ to: n.id, p: n.count, p_pop: n.pop }));
+    state.path = [sample(starts)];
+  } else {
+    const { dist } = nextDist();
+    if (!dist.length) return false;
+    state.path = [...state.path, sample(dist)];
+  }
+  if (!silent) render();
+  return true;
+}
+
+// Sample one 64-beat dance. Only moves that still fit are allowed, and the dance never
+// ends on its own first move: the move after B2 *is* the first move, so repeating it at
+// the end would count it twice. Retries until a sequence fills the dance exactly.
+function generateDance(tries = 60) {
+  const saved = state.path;
+  let best = [];
+  for (let t = 0; t < tries; t++) {
+    state.path = [];
+    step(true);
+    while (totalBeats() < DANCE_BEATS) {
+      const p = state.path;
+      const dist = nextDist().dist.filter(e => {
+        state.path = [...p, e.to];
+        const total = totalBeats();
+        state.path = p;
+        return total <= DANCE_BEATS && !(e.to === p[0] && total === DANCE_BEATS);
+      });
+      if (!dist.length) break;
+      state.path = [...p, sample(dist)];
+    }
+    while (state.path.length > 1 && state.path.at(-1) === state.path[0]) state.path = state.path.slice(0, -1);
+    if (Math.abs(DANCE_BEATS - totalBeats()) < Math.abs(DANCE_BEATS - (best.length ? totalOf(best) : 0))) best = state.path;
+    if (totalBeats() === DANCE_BEATS) break;
+  }
+  state.path = saved;
+  return best;
+}
+function totalOf(path) { const saved = state.path; state.path = path; const t = totalBeats(); state.path = saved; return t; }
+
+function startWalk() {
+  state.beatOverride = {};
+  const dance = generateDance();
+  state.path = [];
+  let n = 0;
+  $("#walk").textContent = "Stop";
+  const go = () => {
+    state.path = dance.slice(0, ++n); render();
+    if (n >= dance.length) return stopWalk();
+    walking = setTimeout(go, 450);
+  };
+  walking = setTimeout(go, 0);
+}
+function stopWalk() {
+  if (walking) clearTimeout(walking);
+  walking = null;
+  $("#walk").textContent = "Random walk";
+}
+
+let resizeT;
+window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => {
+  if (!sim) return;
+  const { width, height } = $("#graph svg").getBoundingClientRect();
+  sim.force("x").x(width / 2); sim.force("y").y(height / 2); sim.alpha(0.3).restart();
+}, 200); });
+
+init();
+</script>
+</body>
+</html>
