@@ -67,6 +67,13 @@ aside h2:first-child { margin-top: 0; }
 .pmoves { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip .pb { font-size: 10px; color: var(--muted); margin-right: 4px; font-variant-numeric: tabular-nums; }
 .fit { font-size: 11px; color: var(--path); white-space: nowrap; }
+.chip.off { border-style: dashed; border-color: var(--muted); }
+#anyFilter { font-size: 12px; padding: 2px 6px; width: 140px; text-transform: none; letter-spacing: 0; }
+#any { display: flex; flex-wrap: wrap; gap: 4px; }
+.anym { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--bg); }
+.anym.offc { border-style: dashed; }
+.anym .num { color: var(--muted); font-size: 11px; }
+button:disabled { opacity: .4; cursor: default; }
 .arrow { color: var(--muted); font-size: 12px; }
 .empty { color: var(--muted); font-style: italic; }
 #current .name { font-size: 20px; font-weight: 650; margin: 2px 0; }
@@ -118,10 +125,12 @@ aside h2:first-child { margin-top: 0; }
   <span style="flex:1"></span>
   <button id="step" title="Sample one next move">Step</button>
   <button id="walk" class="primary" title="Generate a random sequence">Random walk</button>
+  <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+  <button id="redo" title="Redo (Ctrl+Y)">↷ Redo</button>
   <button id="reset">Reset</button>
 </header>
 <main>
-  <div id="graph"><svg></svg><div id="legend"></div><div id="hint">Click a move to start · click a successor to walk · drag a node to pin it, click to unpin</div></div>
+  <div id="graph"><svg></svg><div id="legend"></div><div id="hint">Click a move to start · click a successor to walk · Shift-click to add any move · Ctrl+Z undo · drag to pin, click to unpin</div></div>
   <aside>
     <h2>Path <button id="back" class="small" title="Remove last move">↶ Back</button></h2>
     <div id="path"></div>
@@ -132,6 +141,8 @@ aside h2:first-child { margin-top: 0; }
       <button data-o="1" title="Condition on the last move only">1st order</button>
     </span></h2>
     <div id="next"></div>
+    <h2>Any move <input id="anyFilter" type="search" placeholder="filter…" title="Add any legal move, even one the chain has never seen here"></h2>
+    <div id="any"></div>
     <h2>Comes after</h2>
     <div id="prev"></div>
   </aside>
@@ -248,7 +259,7 @@ function buildGraph() {
         if (!d.pinned) d.fx = d.fy = null;
         d3.select(this).classed("pinned", d.pinned);
       }))
-    .on("click", (ev, d) => { ev.stopPropagation(); stopWalk(); clickNode(d.id); });
+    .on("click", (ev, d) => { ev.stopPropagation(); stopWalk(); clickNode(d.id, ev.shiftKey); });
   nodeSel.append("circle").attr("r", d => d.r).attr("fill", d => color(family(d.id)));
   nodeSel.append("text").attr("dx", d => d.r + 3).attr("dy", "0.35em").attr("class", "lbl")
     .text(d => pretty(d.id)).attr("data-big", d => d.count >= labelCut ? 1 : null);
@@ -294,12 +305,14 @@ function restyle() {
   linkSel.attr("stroke-width", l => width(l.e[w]));
 }
 
-function clickNode(id) {
+// append successors (or anything, with Shift); otherwise start over (Ctrl+Z brings it back)
+function clickNode(id, append) {
   const cur = state.path.at(-1);
   const isNext = cur && (L.first_order[cur] || []).some(e => e.to === id);
-  state.path = isNext ? [...state.path, id] : [id];
+  state.path = isNext || (append && cur) ? [...state.path, id] : [id];
   render();
 }
+const onChain = (a, b) => (L.first_order[a] || []).some(e => e.to === b);
 
 function nextDist() {
   const p = state.path;
@@ -313,6 +326,8 @@ function nextDist() {
 
 function render() {
   writeHash();
+  recordHistory();
+  renderAny();
   const p = state.path, cur = p.at(-1);
   const pk = pKey();
 
@@ -321,7 +336,8 @@ function render() {
   $("#path").innerHTML = p.length
     ? groups.map(([ph, items]) => `<div class="phrase"><div class="plabel">${phraseName(ph)}</div><div class="pmoves">${items.map(({ m, i, start }) => {
         const opts = beatChoices(i), over = beatKey(i) in state.beatOverride;
-        return `<span class="chip ${i === p.length - 1 ? "cur" : ""}" data-i="${i}" title="Go back to here"><span class="pb">${start % 16 + 1}</span>${esc(pretty(m))}<button class="b ${opts.length > 1 ? "multi" : ""} ${over ? "over" : ""}" data-b="${i}" title="${opts.length > 1 ? "Click to cycle: " + opts.join(" / ") + " beats" : "beats"}">${beatsAt(i)}b</button><button class="x" data-x="${i}" title="Remove from here">×</button></span>`;
+        const off = i > 0 && !onChain(p[i - 1], m);
+        return `<span class="chip ${i === p.length - 1 ? "cur" : ""} ${off ? "off" : ""}" data-i="${i}" title="${off ? "Off-chain: never seen after " + esc(pretty(p[i - 1])) + ". " : ""}Go back to here"><span class="pb">${start % 16 + 1}</span>${esc(pretty(m))}<button class="b ${opts.length > 1 ? "multi" : ""} ${over ? "over" : ""}" data-b="${i}" title="${opts.length > 1 ? "Click to cycle: " + opts.join(" / ") + " beats" : "beats"}">${beatsAt(i)}b</button><button class="x" data-x="${i}" title="Remove from here">×</button></span>`;
       }).join("")}</div></div>`).join("")
     : '<span class="empty">Click a move in the graph, search, or hit Random walk.</span>';
   $("#path").querySelectorAll(".chip").forEach(c => c.onclick = e => {
@@ -346,7 +362,7 @@ function render() {
   $("#nextTitle").innerHTML = given
     ? `Next move <span class="small">given ${given.map(g => esc(pretty(g))).join(" → ")}${fellBack ? " (no 2nd-order data, using 1st)" : ""}</span>`
     : "Next move";
-  $("#next").innerHTML = cur ? rows(dist, pk, totalBeats() % 16 + 1) || '<span class="empty">No recorded successor (end of data).</span>' : '<span class="empty">—</span>';
+  $("#next").innerHTML = cur ? rows(dist, pk, totalBeats() % 16 + 1) || '<span class="empty">No recorded successor. Add any move below.</span>' : '<span class="empty">—</span>';
   $("#next").querySelectorAll(".row").forEach(r => r.onclick = e => { if (e.target.closest("details")) return; stopWalk(); state.path = [...p, r.dataset.m]; render(); });
 
   const inc = cur ? incoming[cur] || [] : [];
@@ -559,6 +575,7 @@ function generateDance(tries = 60) {
 function totalOf(path) { const saved = state.path; state.path = path; const t = totalBeats(); state.path = saved; return t; }
 
 function startWalk() {
+  pushUndo();
   state.beatOverride = {};
   const dance = generateDance();
   state.path = [];
@@ -583,6 +600,60 @@ window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTi
   const { width, height } = $("#graph svg").getBoundingClientRect();
   sim.force("x").x(width / 2); sim.force("y").y(height / 2); sim.alpha(0.3).restart();
 }, 200); });
+
+// ---- any move (off-chain) ----
+function renderAny() {
+  const f = $("#anyFilter").value.trim().toLowerCase(), cur = state.path.at(-1);
+  const list = L.nodes.filter(n => !f || pretty(n.id).toLowerCase().includes(f));
+  $("#any").innerHTML = list.map(n => {
+    const chained = cur && onChain(cur, n.id);
+    return `<button class="anym ${chained ? "" : "offc"}" data-m="${esc(n.id)}" title="${n.in_data ? "" : "Standard figure, not in the source dances. "}${cur && !chained ? "Off-chain after " + esc(pretty(cur)) : ""}"><span class="dot" style="background:${color(family(n.id))}"></span>${esc(pretty(n.id))}${n.in_data ? "" : "*"} <span class="num">${beatLabel(n.id)}</span></button>`;
+  }).join("") || '<span class="empty">No match.</span>';
+  $("#any").querySelectorAll(".anym").forEach(b => {
+    b.onclick = () => { stopWalk(); state.path = [...state.path, b.dataset.m]; render(); };
+    b.onmouseenter = () => hoverEdge(cur, b.dataset.m, b.dataset.m);
+    b.onmouseleave = () => hoverEdge();
+  });
+}
+
+// ---- undo / redo ----
+const undoStack = [], redoStack = [];
+let lastSnap = null, restoring = false;
+const snap = () => JSON.stringify({ level: state.level, path: state.path, over: state.beatOverride });
+function pushUndo() {
+  if (lastSnap === null) return;
+  undoStack.push(lastSnap);
+  if (undoStack.length > 300) undoStack.shift();
+  redoStack.length = 0;
+}
+function recordHistory() {
+  const s = snap();
+  // a random walk's animation frames are one step: startWalk pushes before it begins
+  if (s !== lastSnap && !restoring && !walking) pushUndo();
+  lastSnap = s;
+  $("#undo").disabled = !undoStack.length;
+  $("#redo").disabled = !redoStack.length;
+}
+function restore(s) {
+  const o = JSON.parse(s);
+  stopWalk();
+  restoring = true;
+  state.path = o.path;
+  state.beatOverride = o.over;
+  if (o.level !== state.level) { state.level = o.level; $("#level").value = o.level; loadLevel(); } else render();
+  restoring = false;
+}
+function undo() { if (undoStack.length) { redoStack.push(snap()); restore(undoStack.pop()); } }
+function redo() { if (redoStack.length) { undoStack.push(snap()); restore(redoStack.pop()); } }
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.target.closest?.("input, textarea, select")) return;
+  const k = e.key.toLowerCase();
+  if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === "y" || (k === "z" && e.shiftKey)) { e.preventDefault(); redo(); }
+});
+$("#undo").onclick = undo;
+$("#redo").onclick = redo;
+$("#anyFilter").oninput = () => renderAny();
 
 init();
 </script>

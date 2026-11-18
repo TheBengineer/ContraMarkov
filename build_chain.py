@@ -16,7 +16,23 @@ HERE = Path(__file__).resolve().parent
 PHRASE = 16  # first_move_beat_offsets are positions within a 16-beat phrase
 
 # Conventional beat counts, used only for moves the offsets can't measure.
+# Standard contra figures that may not appear in the source dances, so they can still
+# be sequenced by hand (in_data: false, conventional beats, no transitions).
+EXTRA_MOVES = [
+    "allemande left|partner", "balance|partner", "balance|neighbor", "balance ring",
+    "box the gnat|neighbor", "California twirl|neighbor", "circle left", "circle right",
+    "do-si-do|neighbor", "do-si-do|partner", "gypsy|neighbor", "gypsy|partner", "hey",
+    "ladies chain|neighbor", "ladies chain|partner", "long lines forward and back",
+    "mad robin|neighbor", "mad robin|partner", "pass the ocean", "pass through",
+    "petronella turn", "promenade|partner", "promenade|neighbor", "Rory O'More",
+    "slice left", "slide left", "slide right", "star left", "star right",
+    "swing|neighbor", "swing|partner", "swing|balance|neighbor", "swing|balance|partner",
+    "zig zag",
+]
+
 DEFAULT_BEATS = {
+    "gypsy": [8], "mad robin": [8], "promenade": [8], "Rory O'More": [8], "zig zag": [4],
+    "slice left": [4], "slide left": [4, 2], "slide right": [4, 2], "balance": [4],
     "swing": [8, 10, 12], "allemande left": [8, 6, 4], "allemande right": [8, 6, 4],
     "do-si-do": [8, 6], "ladies chain": [8], "star left": [8], "star right": [8],
     "circle left": [8, 6], "circle right": [8, 6], "hey": [16, 8], "ricochet hey": [8],
@@ -199,13 +215,18 @@ def build(rows):
             out.sort(key=lambda e: (-e["count"], -e["pop"], e["to"]))
             return out
 
-        all_moves = set(node_stats) | {m for d in first.values() for m in d}
+        data_moves = set(node_stats) | {m for d in first.values() for m in d}
+        # skip extras the data already has, including finer variants ("circle left|3/4")
+        known = [m.lower() for m in data_moves]
+        all_moves = data_moves | {m for m in EXTRA_MOVES
+                                  if not any(k == m.lower() or k.startswith(m.lower() + "|") for k in known)}
         nodes = []
         for m in sorted(all_moves, key=str.lower):
             s = node_stats.get(m, {"count": 0, "pop": 0, "dances": set()})
             nodes.append({
                 "id": m,
                 "base": m.split("|")[0],
+                "in_data": m in data_moves,
                 "count": s["count"],
                 "pop": s["pop"],
                 "n_dances": len(s["dances"]),
@@ -239,6 +260,8 @@ def build(rows):
                      "in range; the viewer stretches them to the phrase end, or shrinks "
                      "them so a fixed-length next move ends on the phrase end.",
             "dance_beats": 64,
+            "in_data": "nodes[].in_data is false for standard contra figures added so "
+                       "they can be sequenced by hand; they have no recorded transitions.",
             "phrases": "The music is AABB: four 16-beat phrases A1, A2, B1, B2. "
                        "nodes[].phrase_starts: which beat (1-16) of a phrase the move "
                        "starts on, with how often. The source data gives position within "
